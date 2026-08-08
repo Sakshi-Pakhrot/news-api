@@ -1,0 +1,9 @@
+wheel
+python-dotenv
+fastapi
+uvicorn
+feedparser
+googlenewsdecoder
+pydantic
+beautifulsoup4
+httpx
