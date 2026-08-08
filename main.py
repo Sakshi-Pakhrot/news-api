@@ -7,12 +7,14 @@ from typing import List, Optional, Callable, Awaitable, Tuple
 import httpx
 import feedparser
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from googlenewsdecoder import gnewsdecoder
 from dotenv import load_dotenv
 import re
+import traceback
 
 # Load environment variables (API keys) from .env
 load_dotenv()
@@ -40,6 +42,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled Exception: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal Server Error",
+            "message": str(exc),
+            "traceback": traceback.format_exc()
+        }
+    )
 
 # Request and Response schemas
 
