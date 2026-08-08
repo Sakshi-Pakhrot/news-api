@@ -40,6 +40,10 @@ async def scrape_article_content_firecrawl(client: httpx.AsyncClient, url: str) 
         
         # Extract image from metadata
         image_url = metadata.get("og:image") or metadata.get("image") or metadata.get("twitter:image")
+        if isinstance(image_url, list):
+            image_url = image_url[0] if image_url else None
+        elif image_url is not None:
+            image_url = str(image_url)
         
         # Firecrawl returns markdown. We could strip some markdown, but since it's an article, it should be fine.
         return markdown_text, image_url
