@@ -22,18 +22,18 @@ async def scrape_article_content_firecrawl(client: httpx.AsyncClient, url: str) 
     payload = {
         "url": url,
         "formats": ["markdown"],
-        "waitFor": 3000
+        "waitFor": 5000
     }
     try:
         response = await client.post(firecrawl_url, headers=headers, json=payload, timeout=30.0)
         if response.status_code != 200:
             logger.error(f"Firecrawl returned status {response.status_code} for {url}. Details: {response.text}")
-            return "", None, url
+            return f"Firecrawl API Error: Status {response.status_code}. Rate limit or server error.", None, url
         
         data = response.json()
         if not data.get("success"):
             logger.error(f"Firecrawl returned success=False for {url}. Details: {data}")
-            return "", None, url
+            return "Firecrawl API Error: Success = False returned from Firecrawl.", None, url
             
         content_data = data.get("data", {})
         markdown_text = content_data.get("markdown", "")
@@ -57,4 +57,4 @@ async def scrape_article_content_firecrawl(client: httpx.AsyncClient, url: str) 
         
     except Exception as e:
         logger.error(f"Error scraping {url} with Firecrawl: {e}")
-        return "", None, url
+        return f"Firecrawl Exception: {str(e)}", None, url

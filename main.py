@@ -265,7 +265,12 @@ async def execute_news_content_fetch(payload: NewsRequest, scrape_func: Callable
                     content = content or ""
                     scraped_successfully = bool(content and len(content.strip()) > 100)
                 if not content or not scraped_successfully:
-                    content = "[Full article text could not be scraped due to paywall or connection blocks.]"
+                    if content and "Error:" in content:
+                        pass
+                    elif content and "Exception:" in content:
+                        pass
+                    else:
+                        content = "[Full article text could not be scraped due to paywall or connection blocks.]"
                 
                 # Clean content for LLM
                 content = clean_for_llm(content)
@@ -300,7 +305,12 @@ async def execute_news_content_fetch(payload: NewsRequest, scrape_func: Callable
                 scraped_successfully = (content is not None) and (len(content.strip()) > 100)
                 
                 if not content or not scraped_successfully:
-                    content = "[Full article text could not be scraped due to paywall or connection blocks.]"
+                    if content and "Error:" in content:
+                        pass # Keep the specific error message
+                    elif content and "Exception:" in content:
+                        pass # Keep the specific error message
+                    else:
+                        content = "[Full article text could not be scraped due to paywall or connection blocks.]"
                     
                 # Clean content for LLM
                 content = clean_for_llm(content)
