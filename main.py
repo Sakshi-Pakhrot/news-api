@@ -262,6 +262,7 @@ async def execute_news_content_fetch(payload: NewsRequest, scrape_func: Callable
                     else:
                         content, image_url = scrape_result
                         
+                    content = content or ""
                     scraped_successfully = bool(content and len(content.strip()) > 100)
                 if not content or not scraped_successfully:
                     content = "[Full article text could not be scraped due to paywall or connection blocks.]"
@@ -295,7 +296,8 @@ async def execute_news_content_fetch(payload: NewsRequest, scrape_func: Callable
                 else:
                     content, image_url = scrape_result
                     
-                scraped_successfully = bool(content and len(content.strip()) > 100)
+                content = content or ""
+                scraped_successfully = (content is not None) and (len(content.strip()) > 100)
                 
                 if not content or not scraped_successfully:
                     content = "[Full article text could not be scraped due to paywall or connection blocks.]"
@@ -340,6 +342,7 @@ async def execute_single_scrape(payload: ScrapeRequest, scrape_func: Callable) -
         else:
             content, image_url = scrape_result
         
+    content = content or ""
     scraped_successfully = bool(content and len(content.strip()) > 100)
     if not content:
         content = "[Could not scrape page content due to paywall or connection blocks.]"

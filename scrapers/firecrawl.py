@@ -48,6 +48,9 @@ async def scrape_article_content_firecrawl(client: httpx.AsyncClient, url: str) 
         
         # Extract original URL if we were passed a Google News link
         final_url = metadata.get("og:url") or metadata.get("sourceURL") or url
+        if isinstance(final_url, list):
+            final_url = final_url[0] if final_url else url
+        final_url = str(final_url)
         
         # Firecrawl returns markdown. We could strip some markdown, but since it's an article, it should be fine.
         return markdown_text, image_url, final_url
