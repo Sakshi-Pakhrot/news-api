@@ -12,7 +12,7 @@ async def scrape_article_content_firecrawl(client: httpx.AsyncClient, url: str) 
     api_key = os.getenv("FIRECRAWL_API_KEY")
     if not api_key:
         logger.error("FIRECRAWL_API_KEY is not set.")
-        return "", None
+        return "", None, url
 
     firecrawl_url = "https://api.firecrawl.dev/v1/scrape"
     headers = {
@@ -21,18 +21,19 @@ async def scrape_article_content_firecrawl(client: httpx.AsyncClient, url: str) 
     }
     payload = {
         "url": url,
-        "formats": ["markdown"]
+        "formats": ["markdown"],
+        "waitFor": 3000
     }
     try:
         response = await client.post(firecrawl_url, headers=headers, json=payload, timeout=30.0)
         if response.status_code != 200:
             logger.error(f"Firecrawl returned status {response.status_code} for {url}. Details: {response.text}")
-            return "", None
+            return "", None, url
         
         data = response.json()
         if not data.get("success"):
             logger.error(f"Firecrawl returned success=False for {url}. Details: {data}")
-            return "", None
+            return "", None, url
             
         content_data = data.get("data", {})
         markdown_text = content_data.get("markdown", "")
@@ -45,9 +46,12 @@ async def scrape_article_content_firecrawl(client: httpx.AsyncClient, url: str) 
         elif image_url is not None:
             image_url = str(image_url)
         
+        # Extract original URL if we were passed a Google News link
+        final_url = metadata.get("og:url") or metadata.get("sourceURL") or url
+        
         # Firecrawl returns markdown. We could strip some markdown, but since it's an article, it should be fine.
-        return markdown_text, image_url
+        return markdown_text, image_url, final_url
         
     except Exception as e:
         logger.error(f"Error scraping {url} with Firecrawl: {e}")
-        return "", None
+        return "", None, url

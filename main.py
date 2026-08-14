@@ -254,8 +254,15 @@ async def execute_news_content_fetch(payload: NewsRequest, scrape_func: Callable
             async def _scrape_single(article):
                 async with sem:
                     target_url = article.url
-                    content, image_url = await scrape_func(client, target_url)
-                scraped_successfully = bool(content and len(content.strip()) > 100)
+                    scrape_result = await scrape_func(client, target_url)
+                    if len(scrape_result) == 3:
+                        content, image_url, final_url = scrape_result
+                        if final_url and "news.google.com" not in final_url:
+                            target_url = final_url
+                    else:
+                        content, image_url = scrape_result
+                        
+                    scraped_successfully = bool(content and len(content.strip()) > 100)
                 if not content or not scraped_successfully:
                     content = "[Full article text could not be scraped due to paywall or connection blocks.]"
                 
@@ -280,7 +287,14 @@ async def execute_news_content_fetch(payload: NewsRequest, scrape_func: Callable
                 target_url = article.url
                 
                 # Scrape one by one
-                content, image_url = await scrape_func(client, target_url)
+                scrape_result = await scrape_func(client, target_url)
+                if len(scrape_result) == 3:
+                    content, image_url, final_url = scrape_result
+                    if final_url and "news.google.com" not in final_url:
+                        target_url = final_url
+                else:
+                    content, image_url = scrape_result
+                    
                 scraped_successfully = bool(content and len(content.strip()) > 100)
                 
                 if not content or not scraped_successfully:
@@ -318,7 +332,13 @@ async def execute_single_scrape(payload: ScrapeRequest, scrape_func: Callable) -
             logger.error(f"Error decoding Google News link {target_url}: {e}")
 
     async with httpx.AsyncClient(timeout=10.0) as client:
-        content, image_url = await scrape_func(client, target_url)
+        scrape_result = await scrape_func(client, target_url)
+        if len(scrape_result) == 3:
+            content, image_url, final_url = scrape_result
+            if final_url and "news.google.com" not in final_url:
+                target_url = final_url
+        else:
+            content, image_url = scrape_result
         
     scraped_successfully = bool(content and len(content.strip()) > 100)
     if not content:
