@@ -210,11 +210,12 @@ async def resolve_url(item: dict) -> NewsItem:
         logger.error(f"Error decoding Google News link {target_url}: {e}")
         # Manual fallback
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.head(target_url, follow_redirects=True, timeout=5.0)
+            async with httpx.AsyncClient(headers=HEADERS) as client:
+                # Use GET instead of HEAD as Google often blocks HEAD requests, and follow redirects
+                resp = await client.get(target_url, follow_redirects=True, timeout=10.0)
                 target_url = str(resp.url)
-        except Exception:
-            pass
+        except Exception as fallback_e:
+            logger.error(f"Manual fallback failed for {target_url}: {fallback_e}")
         
     return NewsItem(
         title=item["title"],
