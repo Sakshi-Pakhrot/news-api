@@ -7,14 +7,12 @@ from typing import List, Optional, Callable, Awaitable, Tuple
 import httpx
 import feedparser
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from googlenewsdecoder import gnewsdecoder
 from dotenv import load_dotenv
 import re
-import traceback
 
 # Load environment variables (API keys) from .env
 load_dotenv()
@@ -42,18 +40,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled Exception: {exc}")
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": "Internal Server Error",
-            "message": str(exc),
-            "traceback": traceback.format_exc()
-        }
-    )
 
 # Request and Response schemas
 
@@ -250,20 +236,14 @@ async def execute_news_content_fetch(payload: NewsRequest, scrape_func: Callable
     scraped_articles = []
     async with httpx.AsyncClient(timeout=10.0) as client:
         if concurrent:
+            # Limit concurrent requests to avoid API rate limits (HTTP 429)
+            sem = asyncio.Semaphore(2)
+            
             # Scrape all articles simultaneously
             async def _scrape_single(article):
-                target_url = article.url
-                if "news.google.com" in target_url:
-                    return NewsItemWithContent(
-                        title=article.title,
-                        url=target_url,
-                        source=article.source,
-                        published=article.published,
-                        content="[Blocked: Could not resolve Google News link safely. Aborting to prevent premium charge.]",
-                        image_url=None,
-                        scraped_successfully=False
-                    )
-                content, image_url = await scrape_func(client, target_url)
+                async with sem:
+                    target_url = article.url
+                    content, image_url = await scrape_func(client, target_url)
                 scraped_successfully = bool(content and len(content.strip()) > 100)
                 if not content or not scraped_successfully:
                     content = "[Full article text could not be scraped due to paywall or connection blocks.]"
@@ -288,19 +268,6 @@ async def execute_news_content_fetch(payload: NewsRequest, scrape_func: Callable
             for article in resolved_articles:
                 target_url = article.url
                 
-                # Failsafe: Don't scrape if it's still a Google link
-                if "news.google.com" in target_url:
-                    scraped_articles.append(NewsItemWithContent(
-                        title=article.title,
-                        url=target_url,
-                        source=article.source,
-                        published=article.published,
-                        content="[Blocked: Could not resolve Google News link safely. Aborting to prevent premium charge.]",
-                        image_url=None,
-                        scraped_successfully=False
-                    ))
-                    continue
-                    
                 # Scrape one by one
                 content, image_url = await scrape_func(client, target_url)
                 scraped_successfully = bool(content and len(content.strip()) > 100)
