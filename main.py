@@ -200,12 +200,17 @@ def clean_for_llm(text: str) -> str:
     
     return text
 
+# Global semaphore to prevent Google News from blocking the server due to burst requests
+URL_RESOLVE_SEM = asyncio.Semaphore(2)
+
 async def resolve_url(item: dict) -> NewsItem:
     target_url = item["link"]
-    try:
-        decoded = await asyncio.wait_for(asyncio.to_thread(gnewsdecoder, target_url), timeout=10.0)
-        if decoded.get("status"):
-            target_url = decoded["decoded_url"]
+    
+    async with URL_RESOLVE_SEM:
+        try:
+            decoded = await asyncio.wait_for(asyncio.to_thread(gnewsdecoder, target_url), timeout=10.0)
+            if decoded.get("status"):
+                target_url = decoded["decoded_url"]
     except Exception as e:
         logger.error(f"Error decoding Google News link {target_url}: {e}")
         # Manual fallback
