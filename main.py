@@ -200,10 +200,15 @@ def clean_for_llm(text: str) -> str:
     
     return text
 
-# Global semaphore to prevent Google News from blocking the server due to burst requests
-URL_RESOLVE_SEM = asyncio.Semaphore(2)
+# Global semaphore to prevent Google News from blocking the server due to burst requests.
+# Initialized lazily to avoid 'no current event loop' errors during module import.
+URL_RESOLVE_SEM = None
 
 async def resolve_url(item: dict) -> NewsItem:
+    global URL_RESOLVE_SEM
+    if URL_RESOLVE_SEM is None:
+        URL_RESOLVE_SEM = asyncio.Semaphore(2)
+        
     target_url = item["link"]
     
     async with URL_RESOLVE_SEM:
@@ -211,16 +216,16 @@ async def resolve_url(item: dict) -> NewsItem:
             decoded = await asyncio.wait_for(asyncio.to_thread(gnewsdecoder, target_url), timeout=10.0)
             if decoded.get("status"):
                 target_url = decoded["decoded_url"]
-    except Exception as e:
-        logger.error(f"Error decoding Google News link {target_url}: {e}")
-        # Manual fallback
-        try:
-            async with httpx.AsyncClient(headers=HEADERS) as client:
-                # Use GET instead of HEAD as Google often blocks HEAD requests, and follow redirects
-                resp = await client.get(target_url, follow_redirects=True, timeout=10.0)
-                target_url = str(resp.url)
-        except Exception as fallback_e:
-            logger.error(f"Manual fallback failed for {target_url}: {fallback_e}")
+        except Exception as e:
+            logger.error(f"Error decoding Google News link {target_url}: {e}")
+            # Manual fallback
+            try:
+                async with httpx.AsyncClient(headers=HEADERS) as client:
+                    # Use GET instead of HEAD as Google often blocks HEAD requests, and follow redirects
+                    resp = await client.get(target_url, follow_redirects=True, timeout=10.0)
+                    target_url = str(resp.url)
+            except Exception as fallback_e:
+                logger.error(f"Manual fallback failed for {target_url}: {fallback_e}")
         
     return NewsItem(
         title=item["title"],
