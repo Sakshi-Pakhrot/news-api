@@ -449,6 +449,319 @@ async def scrape_single_scraperapi(payload: ScrapeRequest):
     return await execute_single_scrape(payload, scrape_article_content_scraperapi)
 
 
+
+
+def fetch_google_news_rss_hindi(query: str, limit: int = 10) -> List[dict]:
+    query_clean = query.strip().lower()
+    
+    if not query_clean or query_clean in ["top", "top-stories", "breaking", "news"]:
+        feed_url = "https://news.google.com/rss?hl=hi&gl=IN&ceid=IN:hi"
+    elif query_clean in CATEGORY_FEEDS:
+        feed_url = CATEGORY_FEEDS[query_clean]
+    else:
+        encoded_query = urllib.parse.quote(query)
+        feed_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=hi&gl=IN&ceid=IN:hi"
+        
+    try:
+        with httpx.Client(timeout=10.0) as sync_client:
+            resp = sync_client.get(feed_url, headers=HEADERS)
+            if resp.status_code == 200:
+                feed = feedparser.parse(resp.text)
+            else:
+                feed = feedparser.parse(feed_url)
+    except Exception as e:
+        logger.error(f"Error fetching RSS feed via httpx: {e}")
+        feed = feedparser.parse(feed_url)
+    
+    articles = []
+    for entry in feed.entries[:limit]:
+        source_name = "News Source"
+        if hasattr(entry, "source") and hasattr(entry.source, "title"):
+            source_name = entry.source.title
+        elif " - " in entry.title:
+            source_name = entry.title.split(" - ")[-1]
+            
+        snippet = ""
+        if hasattr(entry, "summary"):
+            try:
+                soup_summary = BeautifulSoup(entry.summary, "html.parser")
+                snippet = soup_summary.get_text().strip()
+            except Exception:
+                pass
+            
+        articles.append({
+            "title": entry.title,
+            "link": entry.link,
+            "published": entry.published if hasattr(entry, "published") else "",
+            "source": source_name,
+            "snippet": snippet
+        })
+    return articles
+
+def fetch_google_news_rss_marathi(query: str, limit: int = 10) -> List[dict]:
+    query_clean = query.strip().lower()
+    
+    if not query_clean or query_clean in ["top", "top-stories", "breaking", "news"]:
+        feed_url = "https://news.google.com/rss?hl=mr&gl=IN&ceid=IN:mr"
+    elif query_clean in CATEGORY_FEEDS:
+        feed_url = CATEGORY_FEEDS[query_clean]
+    else:
+        encoded_query = urllib.parse.quote(query)
+        feed_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=mr&gl=IN&ceid=IN:mr"
+        
+    try:
+        with httpx.Client(timeout=10.0) as sync_client:
+            resp = sync_client.get(feed_url, headers=HEADERS)
+            if resp.status_code == 200:
+                feed = feedparser.parse(resp.text)
+            else:
+                feed = feedparser.parse(feed_url)
+    except Exception as e:
+        logger.error(f"Error fetching RSS feed via httpx: {e}")
+        feed = feedparser.parse(feed_url)
+    
+    articles = []
+    for entry in feed.entries[:limit]:
+        source_name = "News Source"
+        if hasattr(entry, "source") and hasattr(entry.source, "title"):
+            source_name = entry.source.title
+        elif " - " in entry.title:
+            source_name = entry.title.split(" - ")[-1]
+            
+        snippet = ""
+        if hasattr(entry, "summary"):
+            try:
+                soup_summary = BeautifulSoup(entry.summary, "html.parser")
+                snippet = soup_summary.get_text().strip()
+            except Exception:
+                pass
+            
+        articles.append({
+            "title": entry.title,
+            "link": entry.link,
+            "published": entry.published if hasattr(entry, "published") else "",
+            "source": source_name,
+            "snippet": snippet
+        })
+    return articles
+
+async def execute_news_content_fetch_hindi(payload: NewsRequest, scrape_func: Callable, concurrent: bool = False) -> NewsContentResponse:
+    news_items = fetch_google_news_rss_hindi(payload.query, limit=payload.num_articles)
+    if not news_items:
+        raise HTTPException(status_code=404, detail=f"No news articles found for query: {payload.query}")
+        
+    # Step 1: Concurrently resolve all URLs (fast, just gets the clean links)
+    resolve_tasks = [resolve_url(item) for item in news_items]
+    resolved_articles = await asyncio.gather(*resolve_tasks)
+    
+    scraped_articles = []
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        if concurrent:
+            # Limit concurrent requests to avoid API rate limits (HTTP 429)
+            sem = asyncio.Semaphore(2)
+            
+            # Scrape all articles simultaneously
+            async def _scrape_single(article):
+                async with sem:
+                    target_url = article.url
+                    scrape_result = await scrape_func(client, target_url)
+                    if len(scrape_result) == 3:
+                        content, image_url, final_url = scrape_result
+                        if final_url and "news.google.com" not in final_url:
+                            target_url = final_url
+                    else:
+                        content, image_url = scrape_result
+                        
+                    content = content or ""
+                    scraped_successfully = bool(content and len(content.strip()) > 100)
+                if not content or not scraped_successfully:
+                    if content and "Error:" in content:
+                        pass
+                    elif content and "Exception:" in content:
+                        pass
+                    else:
+                        content = "[Full article text could not be scraped due to paywall or connection blocks.]"
+                
+                # Clean content for LLM
+                content = clean_for_llm(content)
+                
+                return NewsItemWithContent(
+                    title=article.title,
+                    url=target_url,
+                    source=article.source,
+                    published=article.published,
+                    content=content,
+                    image_url=image_url,
+                    scraped_successfully=scraped_successfully
+                )
+            
+            tasks = [_scrape_single(article) for article in resolved_articles]
+            scraped_articles = await asyncio.gather(*tasks)
+        else:
+            # Step 2: Sequentially scrape the content one by one
+            for article in resolved_articles:
+                target_url = article.url
+                
+                # Scrape one by one
+                scrape_result = await scrape_func(client, target_url)
+                if len(scrape_result) == 3:
+                    content, image_url, final_url = scrape_result
+                    if final_url and "news.google.com" not in final_url:
+                        target_url = final_url
+                else:
+                    content, image_url = scrape_result
+                    
+                content = content or ""
+                scraped_successfully = (content is not None) and (len(content.strip()) > 100)
+                
+                if not content or not scraped_successfully:
+                    if content and "Error:" in content:
+                        pass # Keep the specific error message
+                    elif content and "Exception:" in content:
+                        pass # Keep the specific error message
+                    else:
+                        content = "[Full article text could not be scraped due to paywall or connection blocks.]"
+                    
+                # Clean content for LLM
+                content = clean_for_llm(content)
+                
+                scraped_articles.append(NewsItemWithContent(
+                    title=article.title,
+                    url=target_url,
+                    source=article.source,
+                    published=article.published,
+                    content=content,
+                    image_url=image_url,
+                    scraped_successfully=scraped_successfully
+                ))
+            
+    return NewsContentResponse(
+        query=payload.query,
+        articles=scraped_articles
+    )
+
+async def execute_news_content_fetch_marathi(payload: NewsRequest, scrape_func: Callable, concurrent: bool = False) -> NewsContentResponse:
+    news_items = fetch_google_news_rss_marathi(payload.query, limit=payload.num_articles)
+    if not news_items:
+        raise HTTPException(status_code=404, detail=f"No news articles found for query: {payload.query}")
+        
+    # Step 1: Concurrently resolve all URLs (fast, just gets the clean links)
+    resolve_tasks = [resolve_url(item) for item in news_items]
+    resolved_articles = await asyncio.gather(*resolve_tasks)
+    
+    scraped_articles = []
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        if concurrent:
+            # Limit concurrent requests to avoid API rate limits (HTTP 429)
+            sem = asyncio.Semaphore(2)
+            
+            # Scrape all articles simultaneously
+            async def _scrape_single(article):
+                async with sem:
+                    target_url = article.url
+                    scrape_result = await scrape_func(client, target_url)
+                    if len(scrape_result) == 3:
+                        content, image_url, final_url = scrape_result
+                        if final_url and "news.google.com" not in final_url:
+                            target_url = final_url
+                    else:
+                        content, image_url = scrape_result
+                        
+                    content = content or ""
+                    scraped_successfully = bool(content and len(content.strip()) > 100)
+                if not content or not scraped_successfully:
+                    if content and "Error:" in content:
+                        pass
+                    elif content and "Exception:" in content:
+                        pass
+                    else:
+                        content = "[Full article text could not be scraped due to paywall or connection blocks.]"
+                
+                # Clean content for LLM
+                content = clean_for_llm(content)
+                
+                return NewsItemWithContent(
+                    title=article.title,
+                    url=target_url,
+                    source=article.source,
+                    published=article.published,
+                    content=content,
+                    image_url=image_url,
+                    scraped_successfully=scraped_successfully
+                )
+            
+            tasks = [_scrape_single(article) for article in resolved_articles]
+            scraped_articles = await asyncio.gather(*tasks)
+        else:
+            # Step 2: Sequentially scrape the content one by one
+            for article in resolved_articles:
+                target_url = article.url
+                
+                # Scrape one by one
+                scrape_result = await scrape_func(client, target_url)
+                if len(scrape_result) == 3:
+                    content, image_url, final_url = scrape_result
+                    if final_url and "news.google.com" not in final_url:
+                        target_url = final_url
+                else:
+                    content, image_url = scrape_result
+                    
+                content = content or ""
+                scraped_successfully = (content is not None) and (len(content.strip()) > 100)
+                
+                if not content or not scraped_successfully:
+                    if content and "Error:" in content:
+                        pass # Keep the specific error message
+                    elif content and "Exception:" in content:
+                        pass # Keep the specific error message
+                    else:
+                        content = "[Full article text could not be scraped due to paywall or connection blocks.]"
+                    
+                # Clean content for LLM
+                content = clean_for_llm(content)
+                
+                scraped_articles.append(NewsItemWithContent(
+                    title=article.title,
+                    url=target_url,
+                    source=article.source,
+                    published=article.published,
+                    content=content,
+                    image_url=image_url,
+                    scraped_successfully=scraped_successfully
+                ))
+            
+    return NewsContentResponse(
+        query=payload.query,
+        articles=scraped_articles
+    )
+
+
+
+@app.post("/headlines-hindi", response_model=HeadlinesResponse)
+def fetch_headlines_hindi(payload: HeadlinesRequest):
+    news_items = fetch_google_news_rss_hindi(payload.query, limit=payload.num_articles)
+    if not news_items:
+        raise HTTPException(status_code=404, detail=f"No news articles found for query: {payload.query}")
+    articles = [HeadlineItem(title=item["title"], url=item["link"], source=item["source"], published=item["published"]) for item in news_items]
+    return HeadlinesResponse(query=payload.query, articles=articles)
+
+@app.post("/headlines-marathi", response_model=HeadlinesResponse)
+def fetch_headlines_marathi(payload: HeadlinesRequest):
+    news_items = fetch_google_news_rss_marathi(payload.query, limit=payload.num_articles)
+    if not news_items:
+        raise HTTPException(status_code=404, detail=f"No news articles found for query: {payload.query}")
+    articles = [HeadlineItem(title=item["title"], url=item["link"], source=item["source"], published=item["published"]) for item in news_items]
+    return HeadlinesResponse(query=payload.query, articles=articles)
+
+@app.post("/news-content-firecrawl-hindi", response_model=NewsContentResponse)
+async def fetch_news_content_firecrawl_hindi(payload: NewsRequest):
+    return await execute_news_content_fetch_hindi(payload, scrape_article_content_firecrawl, concurrent=True)
+
+@app.post("/news-content-firecrawl-marathi", response_model=NewsContentResponse)
+async def fetch_news_content_firecrawl_marathi(payload: NewsRequest):
+    return await execute_news_content_fetch_marathi(payload, scrape_article_content_firecrawl, concurrent=True)
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
