@@ -152,7 +152,8 @@ def fetch_google_news_rss(query: str, limit: int = 10) -> List[dict]:
     elif query_clean in CATEGORY_FEEDS:
         feed_url = CATEGORY_FEEDS[query_clean]
     else:
-        encoded_query = urllib.parse.quote(query)
+        query_with_time = f"{query} when:7d"
+        encoded_query = urllib.parse.quote(query_with_time)
         feed_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
         
     feed = fetch_rss_with_fallback(feed_url)
@@ -480,7 +481,8 @@ def fetch_google_news_rss_hindi(query: str, limit: int = 10) -> List[dict]:
     elif query_clean in CATEGORY_FEEDS:
         feed_url = CATEGORY_FEEDS[query_clean]
     else:
-        encoded_query = urllib.parse.quote(query)
+        query_with_time = f"{query} when:7d"
+        encoded_query = urllib.parse.quote(query_with_time)
         feed_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=hi&gl=IN&ceid=IN:hi"
         
     feed = fetch_rss_with_fallback(feed_url)
@@ -518,7 +520,8 @@ def fetch_google_news_rss_marathi(query: str, limit: int = 10) -> List[dict]:
     elif query_clean in CATEGORY_FEEDS:
         feed_url = CATEGORY_FEEDS[query_clean]
     else:
-        encoded_query = urllib.parse.quote(query)
+        query_with_time = f"{query} when:7d"
+        encoded_query = urllib.parse.quote(query_with_time)
         feed_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=mr&gl=IN&ceid=IN:mr"
         
     feed = fetch_rss_with_fallback(feed_url)
