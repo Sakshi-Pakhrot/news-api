@@ -114,6 +114,36 @@ CATEGORY_FEEDS = {
 }
 
 
+
+def fetch_rss_with_fallback(feed_url: str):
+    """Fetches RSS feed natively, and falls back to ScraperAPI if blocked."""
+    import os
+    try:
+        with httpx.Client(timeout=10.0) as sync_client:
+            resp = sync_client.get(feed_url, headers=HEADERS)
+            if resp.status_code == 200:
+                return feedparser.parse(resp.text)
+            else:
+                logger.warning(f"Native RSS fetch returned {resp.status_code} for {feed_url}")
+    except Exception as e:
+        logger.warning(f"Native RSS fetch failed for {feed_url}: {e}")
+    
+    # Fallback to ScraperAPI
+    api_key = os.getenv("SCRAPER_API_KEY")
+    if api_key:
+        logger.info(f"Using ScraperAPI fallback for {feed_url}")
+        scraper_url = f"http://api.scraperapi.com?api_key={api_key}&url={feed_url}"
+        try:
+            with httpx.Client(timeout=30.0) as sync_client:
+                resp = sync_client.get(scraper_url)
+                if resp.status_code == 200:
+                    return feedparser.parse(resp.text)
+        except Exception as e:
+            logger.error(f"ScraperAPI fallback failed: {e}")
+            
+    # Ultimate fallback
+    return feedparser.parse(feed_url)
+
 def fetch_google_news_rss(query: str, limit: int = 10) -> List[dict]:
     query_clean = query.strip().lower()
     
@@ -125,16 +155,7 @@ def fetch_google_news_rss(query: str, limit: int = 10) -> List[dict]:
         encoded_query = urllib.parse.quote(query)
         feed_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
         
-    try:
-        with httpx.Client(timeout=10.0) as sync_client:
-            resp = sync_client.get(feed_url, headers=HEADERS)
-            if resp.status_code == 200:
-                feed = feedparser.parse(resp.text)
-            else:
-                feed = feedparser.parse(feed_url)
-    except Exception as e:
-        logger.error(f"Error fetching RSS feed via httpx: {e}")
-        feed = feedparser.parse(feed_url)
+    feed = fetch_rss_with_fallback(feed_url)
     
     articles = []
     for entry in feed.entries[:limit]:
@@ -462,16 +483,7 @@ def fetch_google_news_rss_hindi(query: str, limit: int = 10) -> List[dict]:
         encoded_query = urllib.parse.quote(query)
         feed_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=hi&gl=IN&ceid=IN:hi"
         
-    try:
-        with httpx.Client(timeout=10.0) as sync_client:
-            resp = sync_client.get(feed_url, headers=HEADERS)
-            if resp.status_code == 200:
-                feed = feedparser.parse(resp.text)
-            else:
-                feed = feedparser.parse(feed_url)
-    except Exception as e:
-        logger.error(f"Error fetching RSS feed via httpx: {e}")
-        feed = feedparser.parse(feed_url)
+    feed = fetch_rss_with_fallback(feed_url)
     
     articles = []
     for entry in feed.entries[:limit]:
@@ -509,16 +521,7 @@ def fetch_google_news_rss_marathi(query: str, limit: int = 10) -> List[dict]:
         encoded_query = urllib.parse.quote(query)
         feed_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=mr&gl=IN&ceid=IN:mr"
         
-    try:
-        with httpx.Client(timeout=10.0) as sync_client:
-            resp = sync_client.get(feed_url, headers=HEADERS)
-            if resp.status_code == 200:
-                feed = feedparser.parse(resp.text)
-            else:
-                feed = feedparser.parse(feed_url)
-    except Exception as e:
-        logger.error(f"Error fetching RSS feed via httpx: {e}")
-        feed = feedparser.parse(feed_url)
+    feed = fetch_rss_with_fallback(feed_url)
     
     articles = []
     for entry in feed.entries[:limit]:
